@@ -21,7 +21,19 @@ function Write-Log {
     Saves logs only to file.
 
     .EXAMPLE
-    
+    $error[0].Exception | fl -Force | Write-Log -Level Error -Quiet
+
+    Logs error to file.
+
+    .EXAMPLE
+    Write-Log "Operation successful" -ForegroundColor Green
+
+    Logs "Operation successful" to console and file with green color.
+
+    .EXAMPLE
+    Write-Log "Something is missing..." -Level Warning
+
+    Logs "Something is missing..." to file and console as warning.
     #>
     param(
         [Parameter(Position=0,ValueFromPipeline=$true)]
