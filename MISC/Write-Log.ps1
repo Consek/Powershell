@@ -50,7 +50,7 @@ function Write-Log {
 
     begin{
         if(-not $logPath){
-            $logPath = '\PSLog.log'
+            $logPath = '.\PSLog.log'
         }
         $isExists = Test-Path ( Split-Path -Parent $logPath)
 
@@ -60,7 +60,7 @@ function Write-Log {
     }#begin
 
     process{
-        $Message = $Message | Out-String
+        $Message = ($Message | Out-String).TrimEnd()
         $FormattedDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss" 
         if(-not $Quiet){
             switch ($Level) { 
