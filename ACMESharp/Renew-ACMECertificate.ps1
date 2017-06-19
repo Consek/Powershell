@@ -1,5 +1,13 @@
+<#
+    .NOTES
+    Dependencies:
+    ACMESharp Module (https://github.com/ebekker/ACMESharp)
+    Email logging.ps1
 
-
+    .LINK
+    Sources:
+    https://marc.durdin.net/2016/11/automating-certificate-renewal-with-lets-encrypt-and-acmesharp-on-windows/
+#>
 
 import-module ACMESharp
 
@@ -48,8 +56,7 @@ Try {
 
     # Export Certificate to Grafana and restart service
     Write-Log "Exporting certificate"
-    Get-ACMECertificate $certname -ExportKeyPEM $KeyPath `
-        -ExportCertificatePEM $CertPath -Overwrite
+    Get-ACMECertificate $certname -ExportKeyPEM $KeyPath -ExportCertificatePEM $CertPath -Overwrite
     Write-Log "Export Completed"
 
 
