@@ -54,7 +54,7 @@ Try {
         Exit
     }
 
-    # Export Certificate to Grafana and restart service
+    # Export Certificate
     Write-Log "Exporting certificate"
     Get-ACMECertificate $certname -ExportKeyPEM $KeyPath -ExportCertificatePEM $CertPath -Overwrite
     Write-Log "Export Completed"

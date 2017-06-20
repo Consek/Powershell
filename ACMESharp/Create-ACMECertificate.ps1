@@ -10,7 +10,12 @@
 param(
     $Email = "example@example.com",
     $CertDNSName = "example.com",
-    $CertAlias = "example"
+    [Parameter(Mandatory=$false)]
+    $IdentfierAlias = "identifier-$(get-date -format yyyy-MM-dd--HH-mm-ss)",
+    [Parameter(Mandatory=$false)]
+    $CertAlias = "cert-$(get-date -format yyyy-MM-dd--HH-mm-ss)",
+    $KeyPath,
+    $CertPath
 )
 
 Import-Module ACMESharp -EA STOP
@@ -33,36 +38,41 @@ if(-not $Registration){
 }
 
 try{ 
-    $Identifier = Get-ACMEIdentifier -IdentifierRef $CertAlias
-    Write-Host "ACME identifier present."
+    $Identifier = Get-ACMEIdentifier -IdentifierRef $IdentfierAlias
+    if($Identifier.Dns -eq $CertDNSName){
+        Write-Host "ACME identifier present."
+    }else{
+        Write-Host "ACME identifier present for different CertDNSName, rerun script with new CertIdentifier."
+        return
+    }
+
 }catch{
     Write-Host "No ACME identifier detected, creating new."
-    $Identifier = New-ACMEIdentifier -Dns $CertDNSName -Alias $CertAlias
-    Write-Host "Complete steps listed below to finish challenge." -ForegroundColor Yellow
-    Complete-ACMEChallenge $CertAlias -ChallengeType dns-01 -Handler manual
+    $Identifier = New-ACMEIdentifier -Dns $CertDNSName -Alias $IdentfierAlias
 }
 
 if($Identifier.Status -ne "valid"){
-    if($Handler.Status -eq "invalid"){
-        Write-Host "DNS challenge is in invalid state. Run script again with different CertAlias." -ForegroundColor Red
-        return 
-    }
 
     $Handler = $Identifier.Challenges | Where-Object { $_.Type -eq "dns-01" }
+
+    if($Handler.Status -eq "invalid"){
+        Write-Host "DNS challenge is in invalid state. Run script again with different IdentfierAlias." -ForegroundColor Red
+        return 
+    }
 
     if(-not $Handler.HandlerHandleDate){
         Write-Host "No challenge detected, creating new one."
         Write-Host "Complete steps listed below to finish challenge."
-        Complete-ACMEChallenge $CertAlias -ChallengeType dns-01 -Handler manual
-    }else{
+        Complete-ACMEChallenge $IdentfierAlias -ChallengeType dns-01 -Handler manual
+    }elseif(-not $Handler.SubmitDate){
         Write-Host "Challenge detected."
         Write-Host "Complete steps listed below to finish challenge."
-        Complete-ACMEChallenge $CertAlias -ChallengeType dns-01 -Handler manual -Repeat
+        Complete-ACMEChallenge $IdentfierAlias -ChallengeType dns-01 -Handler manual -Repeat
     }
 
     if(-not $Handler.SubmitDate){
         Write-Host "Submit challenge only when dns entry is created and propagated. 
-        If not, the challange will fail and new CertAlias will have to be used." -ForegroundColor Yellow
+        If not, the challange will fail and new IdentfierAlias will have to be used." -ForegroundColor Yellow
         $choice = ''
         while ($choice -notmatch "^(y|n)$") {
             Write-Host "Do you want to submit challenge? (Y/N)"
@@ -70,7 +80,7 @@ if($Identifier.Status -ne "valid"){
         }
         if($choice -eq 'y'){
             Write-Host "Submitting challenge."
-            Submit-ACMEChallenge -IdentifierRef $CertAlias -ChallengeType dns-01
+            Submit-ACMEChallenge -IdentifierRef $IdentfierAlias -ChallengeType dns-01 | Out-Null
         }else{
             return
         }
@@ -79,14 +89,20 @@ if($Identifier.Status -ne "valid"){
     }
 
     Write-Host "Checking results..."
-    $Handler = Update-ACMEIdentifier -IdentifierRef $CertAlias -ChallengeType dns-01 | 
+    $i = 0
+    do{
+        $i += 5
+        Start-Sleep -Seconds 5
+        $Handler = Update-ACMEIdentifier -IdentifierRef $IdentfierAlias -ChallengeType dns-01 | 
         Select-Object -ExpandProperty Challenges | Where-Object {$_.Type -eq "dns-01"}
+    }while($Handler.Status -eq "pending" -and $i -le 60)
+
 
     if($Handler.Status -eq "Pending"){
-        Write-Host "Challege is still pending. Wait some time and rerun the script."
+        Write-Host "Challege is still pending after a minute. Wait some time and rerun the script."
         return 
     }elseif($Handler.Status -eq "invalid"){
-        Write-Host "Challenge is in invalid state, the procedure needs to be repeated. Rerun the script with new CertAlias."
+        Write-Host "Challenge is in invalid state, the procedure needs to be repeated. Rerun the script with new IdentfierAlias."
         return 
     }elseif($Handler.Status -eq "valid"){
         Write-Host "Challenge completed successfuly."
@@ -97,13 +113,30 @@ if($Identifier.Status -ne "valid"){
 }
 
 try{
-    if((Update-ACMEIdentifier -IdentifierRef $CertAlias).Status -eq "valid"){
-        Write-Host "Creating and submitting certificate."
-        New-ACMECertificate -IdentifierRef $CertAlias -Alias $CertAlias -Generate | Out-Null
-        Submit-ACMECertificate -CertificateRef $CertAlias | Out-Null
+    $cert = Get-ACMECertificate | Where-Object { $_.Alias -eq $CertAlias }
+    if(-not $cert){
+        throw "Error"
     }
 }catch{
-    
+    Write-Host "Creating and submitting certificate."
+    New-ACMECertificate -IdentifierRef $IdentfierAlias -Alias $CertAlias -Generate | Out-Null
+    Submit-ACMECertificate -CertificateRef $CertAlias | Out-Null
 }
+
+$i = 0
+while((Update-ACMECertificate -CertificateRef $CertAlias).SerialNumber -eq ""){
+    if($i -gt 60){
+        Write-Host "Certificate was not issued for a minute. Wait some time and rerun the script."
+        return
+    }
+    $i += 5
+    Start-Sleep -Seconds 5
+}
+
+
+Write-Host "Exporting certificate"
+Get-ACMECertificate $CertAlias -ExportKeyPEM $KeyPath -ExportCertificatePEM $CertPath -Overwrite | Out-Null
+Write-Host "Export Completed"
+
 
 
