@@ -52,7 +52,10 @@ param(
     $CertAlias = "cert-$(get-date -format yyyy-MM-dd--HH-mm-ss)",
     $KeyPath,
     $CertPemPath,
-    $CertPkcs12Path
+    $CertPkcs12Path,
+    [Parameter(Mandatory=$true)]
+    [ValidateSet('dns-01','http-01')]
+    $ChallengeType
 )
 
 Import-Module ACMESharp -EA STOP
@@ -67,7 +70,7 @@ if(-not $Vault){
 
 ## Get existing registration and update email contact, create new one if none present
 try{ 
-    $Registration = Get-ACMERegistration -EA SilentlyContinue
+    $Registration = Get-ACMERegistration 
     Update-ACMERegistration -Contacts "mailto:$Email" | Out-Null
     Write-Host "ACME Registration updated."
 }catch{}
@@ -83,7 +86,8 @@ try{
     $Identifiers = $Identifiers | 
         ForEach-Object { 
             $Alias = $_.Alias
-            Update-ACMEIdentifier -IdentifierRef $_.Alias | Add-Member Alias $Alias -PassThru
+            Update-ACMEIdentifier -IdentifierRef $_.Alias -ChallengeType $ChallengeType | 
+                Add-Member Alias $Alias -PassThru
         }
     
     ## Filter invalid identifiers and sort them so that valid are first
@@ -94,7 +98,7 @@ try{
     ## If at least one is valid challange check can be skipped 
     if($Identifiers[0].Status -ne "Valid"){
         $Identifiers = $Identifiers |
-            Where-Object { $_.Challenges | Where-Object {$_.Type -eq "dns-01" -and $_.Status -ne "Invalid"} }
+            Where-Object { $_.Challenges | Where-Object {$_.Type -eq "$ChallengeType" -and $_.Status -ne "Invalid"} }
     }
 
     ## Select first identifier if none present then throw error so new one can be created
@@ -109,7 +113,7 @@ try{
 }catch{
 
     ## Create new identifier
-    Write-Host "No ACME identifier detected, creating new."
+    Write-Host "No usable ACME identifier detected, creating new."
     $IdentifierAlias = "identifier-$(get-date -format yyyy-MM-dd--HH-mm-ss)"
     $Identifier = New-ACMEIdentifier -Dns $CertDNSName -Alias $IdentifierAlias
 }
@@ -118,24 +122,23 @@ try{
 if($Identifier.Status -ne "valid"){
 
     ## Get dns challenge for later use
-    $Handler = $Identifier.Challenges | Where-Object { $_.Type -eq "dns-01" }
+    $Handler = $Identifier.Challenges | Where-Object { $_.Type -eq "$ChallengeType" }
 
     ## List challenge acceptance requirements by completing challenge 
     ## If required because -Repeat argument cannot always be used
     if(-not $Handler.HandlerHandleDate){
         Write-Host "No challenge detected, creating new one."
-        Write-Host "Complete steps listed below to finish challenge."
-        Complete-ACMEChallenge $IdentifierAlias -ChallengeType dns-01 -Handler manual
+        Complete-ACMEChallenge $IdentifierAlias -ChallengeType $ChallengeType -Handler manual -Regenerate
     }elseif(-not $Handler.SubmitDate){
         Write-Host "Challenge detected."
-        Write-Host "Complete steps listed below to finish challenge."
-        Complete-ACMEChallenge $IdentifierAlias -ChallengeType dns-01 -Handler manual -Repeat
+        Complete-ACMEChallenge $IdentifierAlias -ChallengeType $ChallengeType -Handler manual -Repeat
     }
 
     ## Asks for confirmation before submitting challenge
     if(-not $Handler.SubmitDate){
-        Write-Host -ForegroundColor Yellow -Object "Submit challenge only when dns entry is created and propagated. " +
-            "If not, the challange will fail and new IdentifierAlias will have to be used."
+        Write-Host "Complete steps listed above to finish challenge." -ForegroundColor Yellow
+        Write-Host -ForegroundColor Yellow -Object ("Submit challenge only when dns entry is created and propagated. " +
+            "If not, the challange will fail and new IdentifierAlias will have to be used.")
         $choice = ''
         while ($choice -notmatch "^(y|n)$") {
             Write-Host "Do you want to submit challenge? (Y/N)"
@@ -143,7 +146,7 @@ if($Identifier.Status -ne "valid"){
         }
         if($choice -eq 'y'){
             Write-Host "Submitting challenge."
-            Submit-ACMEChallenge -IdentifierRef $IdentifierAlias -ChallengeType dns-01 | Out-Null
+            Submit-ACMEChallenge -IdentifierRef $IdentifierAlias -ChallengeType $ChallengeType | Out-Null
         }else{
             return
         }
@@ -156,15 +159,15 @@ if($Identifier.Status -ne "valid"){
     do{
         $i += 5
         Start-Sleep -Seconds 5
-        $Handler = Update-ACMEIdentifier -IdentifierRef $IdentifierAlias -ChallengeType dns-01 | 
-            Select-Object -ExpandProperty Challenges | Where-Object {$_.Type -eq "dns-01"}
+        $Handler = Update-ACMEIdentifier -IdentifierRef $IdentifierAlias -ChallengeType $ChallengeType | 
+            Select-Object -ExpandProperty Challenges | Where-Object {$_.Type -eq "$ChallengeType"}
     }while($Handler.Status -eq "pending" -and $i -le 60)
 
     if($Handler.Status -eq "Pending"){
         Write-Host "Challege is still pending after a minute. Wait some time and rerun the script."
         return 
     }elseif($Handler.Status -eq "invalid"){
-        Write-Host "Challenge is in invalid state, the procedure needs to be repeated. Rerun the script with new IdentifierAlias."
+        Write-Error "Challenge is in invalid state, the procedure needs to be repeated. Rerun the script with new IdentifierAlias."
         return 
     }elseif($Handler.Status -eq "valid"){
         Write-Host "Challenge completed successfuly."
