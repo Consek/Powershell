@@ -44,21 +44,22 @@
     https://github.com/Consek/Powershell
     https://github.com/ebekker/ACMESharp
 #>
+[CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)]
     $Email,
     [Parameter(Mandatory=$true)]
     $CertDNSName,
+    [Parameter(Mandatory=$true)]
+    [ValidateSet('dns-01','http-01')]
+    $ChallengeType,
     $CertAlias = "cert-$(get-date -format yyyy-MM-dd--HH-mm-ss)",
     $KeyPath,
     $CertPemPath,
-    $CertPkcs12Path,
-    [Parameter(Mandatory=$true)]
-    [ValidateSet('dns-01','http-01')]
-    $ChallengeType
+    $CertPkcs12Path
 )
 
-Import-Module ACMESharp -EA STOP
+Import-Module ACMESharp -EA STOP 
 
 #### ACMESharp Module does not support EA SilentlyContinue hence try catch blocks
 
@@ -72,10 +73,10 @@ if(-not $Vault){
 try{ 
     $Registration = Get-ACMERegistration 
     Update-ACMERegistration -Contacts "mailto:$Email" | Out-Null
-    Write-Host "ACME Registration updated."
+    Write-Verbose "ACME Registration updated."
 }catch{}
 if(-not $Registration){
-    Write-Host "No ACME Registration detected. Creating new."
+    Write-Verbose "No ACME Registration detected. Creating new."
     New-ACMERegistration -Contacts "mailto:$Email" -AcceptTOS | Out-Null
 }
 
@@ -105,7 +106,7 @@ try{
     $Identifier = $Identifiers | Select-Object -First 1
     $IdentifierAlias = $Identifier.Alias
     if($Identifier){
-        Write-Host "ACME identifier $IdentifierAlias will be used."
+        Write-Verbose "ACME identifier $IdentifierAlias will be used."
     }else{
         throw "Error"
     }
@@ -113,7 +114,7 @@ try{
 }catch{
 
     ## Create new identifier
-    Write-Host "No usable ACME identifier detected, creating new."
+    Write-Verbose "No usable ACME identifier detected, creating new."
     $IdentifierAlias = "identifier-$(get-date -format yyyy-MM-dd--HH-mm-ss)"
     $Identifier = New-ACMEIdentifier -Dns $CertDNSName -Alias $IdentifierAlias
 }
@@ -127,17 +128,17 @@ if($Identifier.Status -ne "valid"){
     ## List challenge acceptance requirements by completing challenge 
     ## If required because -Repeat argument cannot always be used
     if(-not $Handler.HandlerHandleDate){
-        Write-Host "No challenge detected, creating new one."
-        Complete-ACMEChallenge $IdentifierAlias -ChallengeType $ChallengeType -Handler manual -Regenerate
+        Write-Verbose "No challenge detected, creating new one."
+        $Challenge =  Complete-ACMEChallenge $IdentifierAlias -ChallengeType $ChallengeType -Handler manual -Regenerate
     }elseif(-not $Handler.SubmitDate){
-        Write-Host "Challenge detected."
-        Complete-ACMEChallenge $IdentifierAlias -ChallengeType $ChallengeType -Handler manual -Repeat
+        Write-Verbose "Challenge detected."
+        $Challenge = Complete-ACMEChallenge $IdentifierAlias -ChallengeType $ChallengeType -Handler manual -Repeat
     }
 
     ## Asks for confirmation before submitting challenge
     if(-not $Handler.SubmitDate){
         Write-Host "Complete steps listed above to finish challenge." -ForegroundColor Yellow
-        Write-Host -ForegroundColor Yellow -Object ("Submit challenge only when dns entry is created and propagated. " +
+        Write-Host -ForegroundColor Yellow ("Submit challenge only when response is created and propagated. " +
             "If not, the challange will fail and new IdentifierAlias will have to be used.")
         $choice = ''
         while ($choice -notmatch "^(y|n)$") {
@@ -145,16 +146,16 @@ if($Identifier.Status -ne "valid"){
             $choice = Read-Host
         }
         if($choice -eq 'y'){
-            Write-Host "Submitting challenge."
+            Write-Verbose "Submitting challenge."
             Submit-ACMEChallenge -IdentifierRef $IdentifierAlias -ChallengeType $ChallengeType | Out-Null
         }else{
             return
         }
     }else{
-        Write-Host "Challenge already submitted."
+        Write-Verbose "Challenge already submitted."
     }
 
-    Write-Host "Checking results..."
+    Write-Verbose "Checking results..."
     $i = 0
     do{
         $i += 5
@@ -164,20 +165,20 @@ if($Identifier.Status -ne "valid"){
     }while($Handler.Status -eq "pending" -and $i -le 60)
 
     if($Handler.Status -eq "Pending"){
-        Write-Host "Challege is still pending after a minute. Wait some time and rerun the script."
+        Write-Warning "Challege is still pending after a minute. Wait some time and rerun the script."
         return 
     }elseif($Handler.Status -eq "invalid"){
         Write-Error "Challenge is in invalid state, the procedure needs to be repeated. Rerun the script with new IdentifierAlias."
         return 
     }elseif($Handler.Status -eq "valid"){
-        Write-Host "Challenge completed successfuly."
+        Write-Verbose "Challenge completed successfuly."
     }
 
 }else{
-    Write-Host "Challenge already completed successfuly."
+    Write-Verbose "Challenge already completed successfuly."
 }
 
-Write-Host "Creating and submitting certificate with alias: $CertAlias."
+Write-Verbose "Creating and submitting certificate with alias: $CertAlias."
 New-ACMECertificate -IdentifierRef $IdentifierAlias -Alias $CertAlias -Generate | Out-Null
 Submit-ACMECertificate -CertificateRef $CertAlias | Out-Null
 
@@ -185,25 +186,23 @@ Submit-ACMECertificate -CertificateRef $CertAlias | Out-Null
 $i = 0
 while((Update-ACMECertificate -CertificateRef $CertAlias).SerialNumber -eq ""){
     if($i -gt 60){
-        Write-Host "Certificate was not issued for a minute. Wait some time and rerun the script."
+        Write-Warning "Certificate was not issued for a minute. Wait some time and export certificate using Get-ACMECertificate $CertAlias."
         return
     }
     $i += 5
     Start-Sleep -Seconds 5
 }
 
-
-
 if($CertPemPath){
-    Write-Host "Exporting certificate PEM file."
+    Write-Verbose "Exporting certificate PEM file."
     Get-ACMECertificate $CertAlias -ExportCertificatePEM $CertPemPath -Overwrite | Out-Null    
 }
 if($CertPkcs12Path){
-    Write-Host "Exporting certificate Pkcs12 file."
+    Write-Verbose "Exporting certificate Pkcs12 file."
     Get-ACMECertificate $CertAlias -ExportPkcs12 $CertPkcs12Path -Overwrite | Out-Null    
 }
 if($CertKeyPath){
-    Write-Host "Exporting certificate Key file."
+    Write-Verbose "Exporting certificate Key file."
     Get-ACMECertificate $CertAlias -ExportKeyPEM $KeyPath -Overwrite | Out-Null    
 }
 
