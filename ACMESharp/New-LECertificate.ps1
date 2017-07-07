@@ -36,10 +36,10 @@
     Path where cert should be exported in Pkcs12 format. Existing file will be overwritten.
 
     .EXAMPLE
-    $Challenge = Create-LECertificate -Email admin@example.com -CertDNSName example.com -ChallengeType http-01 -KeyPath .\key.pem -CertPemPath .\cert.pem
+    $Challenge = New-LECertificate -Email admin@example.com -CertDNSName example.com -ChallengeType http-01 -KeyPath .\key.pem -CertPemPath .\cert.pem
     if($Challenge){
         ### Insert function for creating file on web server using $Challenge ###
-        Create-LECertificate -Email admin@example.com -CertDNSName example.com -ChallengeType http-01 -Complete -KeyPath .\key.pem -CertPemPath .\cert.pem
+        New-LECertificate -Email admin@example.com -CertDNSName example.com -ChallengeType http-01 -Complete -KeyPath .\key.pem -CertPemPath .\cert.pem
     }
 
     Creates challenge and uses external function to create required file on web server, then challenge is submitted
@@ -59,7 +59,7 @@
     Use -Verbose for progress output.
 #>
 
-function Create-LECertificate {
+function New-LECertificate {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
