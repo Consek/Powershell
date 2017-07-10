@@ -63,19 +63,19 @@ function New-LECertificate {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        $Email,
+        [String]$Email,
         [Parameter(Mandatory=$true)]
         [Alias('DNS')]
-        $CertDNSName,
+        [String]$CertDNSName,
         [Parameter(Mandatory=$true)]
         [ValidateSet('dns-01','http-01')]
-        $ChallengeType,
+        [String]$ChallengeType,
         [Alias('Quiet')]
         [Switch]$Complete,
-        $CertAlias = "cert-$(get-date -format yyyy-MM-dd--HH-mm-ss)",
-        $KeyPath,
-        $CertPemPath,
-        $CertPkcs12Path
+        [String]$CertAlias = "cert-$(get-date -format yyyy-MM-dd--HH-mm-ss)",
+        [String]$KeyPath,
+        [String]$CertPemPath,
+        [String]$CertPkcs12Path
     )
 
     Import-Module ACMESharp -EA STOP -Verbose:$false
@@ -112,7 +112,7 @@ function New-LECertificate {
         $Identifiers = $Identifiers | 
             ForEach-Object { 
                 $Alias = $_.Alias
-                Update-ACMEIdentifier -IdentifierRef $_.Alias -ChallengeType $ChallengeType | 
+                Update-ACMEIdentifier -IdentifierRef $_.Alias | 
                     Add-Member Alias $Alias -PassThru
             }
         
@@ -127,9 +127,9 @@ function New-LECertificate {
             $Identifiers = $Identifiers | 
                 ForEach-Object { 
                     $Alias = $_.Alias
-                    Update-ACMEIdentifier -IdentifierRef $_.Alias -ChallengeType $ChallengeType - | 
+                    Update-ACMEIdentifier -IdentifierRef $_.Alias -ChallengeType $ChallengeType | 
                         Add-Member Alias $Alias -PassThru
-                } | Where-Object { $_.Challenges | Where-Object {$_.Type -eq "$ChallengeType" -and $_.Status -ne "Invalid"} }
+                } | Where-Object { ($_.Challenges | Where-Object {$_.Type -eq "$ChallengeType" -and $_.Status -ne "Invalid"}) }
         }
 
         ## Select first identifier if none present then throw error so new one can be created
