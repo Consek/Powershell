@@ -1,3 +1,7 @@
+##
+## Example script used for executing commands on SQL Server
+##
+
 # Creating new connection and defining connection string
 $SQLConnection = New-Object  System.Data.SqlClient.SqlConnection
 $SQLConnection.ConnectionString = "Server=$Server;Integrated Security=True"
@@ -36,3 +40,5 @@ try{
     Write-Host "Error executing query."
     Write-Host $err
 }
+
+$SQLConnection.Close()
