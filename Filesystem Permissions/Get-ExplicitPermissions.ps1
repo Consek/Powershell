@@ -50,8 +50,10 @@ function Get-ExplicitPermissions{
         [Parameter(
             Mandatory=$true,
             ValueFromPipeline=$true,
+            ValueFromPipelineByPropertyName=$true,
             Position=0
             )]
+        [Alias("FullName")]
         [String[]]$Path,
         [Parameter(Mandatory=$false)]
         [Int]$Depth,
@@ -59,18 +61,17 @@ function Get-ExplicitPermissions{
         [Switch]$IncludeFiles
     )
 
-    begin{}#begin
+    begin{
+        $ExplicitRights = @()
+    }#begin
 
     process{
-    
-        $ExplicitRights = @()
-
-        foreach($DirPath in $Path){
-                
+        foreach($DirPath in $Path){         
             if($Depth){
                 $Dir = Get-ChildItem $DirPath -Recurse -Depth $Depth
+                $Dir += Get-Item $DirPath
             }else{
-                $Dir = Get-ChildItem $DirPath 
+                $Dir = Get-Item $DirPath 
             }
 
             if(-not $IncludeFiles){
@@ -82,13 +83,11 @@ function Get-ExplicitPermissions{
                     Select-Object @{n="Path";e={ $DirEntry.FullName }}, FileSystemRights, IsInherited, IdentityReference |
                     Where-Object { ($_.IdentityReference.Value) -match $Principal -and $_.IsInherited -eq $false }
             }
-
         }
-
-        return $ExplicitRights
-
     }#process
 
-    end{}#end
+    end{
+        return $ExplicitRights
+    }#end
     
 }
